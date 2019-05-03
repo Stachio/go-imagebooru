@@ -8,8 +8,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"printssx"
 	"strings"
+
+	"github.com/Stachio/go-printssx"
 )
 
 // Printer - Generic printer object provided by stachio/printerssx
