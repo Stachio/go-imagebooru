@@ -57,6 +57,17 @@ type ImageBooru struct {
 	pageCap uint64
 }
 
+/*
+func (post *Post) GetPerceptionHash() (pHash uint64, err error) {
+	resp, err := http.Get(post.FileURL)
+	if err != nil {
+		return
+	}
+
+	return
+}
+*/
+
 func getDBNameFromURL(url string) (name string) {
 	name = strings.ToLower(url)
 	http := "http://"
@@ -200,31 +211,7 @@ func (ibb *Browser) GetPost(offset uint64) (post *Post, err error) {
 	if err != nil {
 		return nil, err
 	}
-	// Either PageIN is null or the pid isn't set yet
-	/*
-		if ibPageIn == nil || uint64(len(ibPageIn)) < (pid+1) || ibPageIn[pid] == nil {
-			var ibPage *Page
-			ibPage, err = ib.GetPage(tags, pid)
-			if err != nil {
-				return
-			}
 
-			// PostIN is nil
-			if ibPageIn == nil {
-				pids := ibPage.Count / ib.postCap
-				if (ibPage.Count - (ib.postCap * pids)) > 0 {
-					pids = pids + 1
-				}
-				ibPageIn = make([]*Page, pids)
-			}
-			//PostIN is too short
-			for uint64(len(ibPageIn)) < (pid + 1) {
-				ibPageIn = append(ibPageIn, nil)
-			}
-			ibPageIn[pid] = ibPage
-		}
-
-	*/
 	if offset >= uint64(len(page.Posts)) {
 		err = fmt.Errorf("Offset [%d] > returned posts length [%d]", offset, len(page.Posts))
 		return
@@ -233,6 +220,23 @@ func (ibb *Browser) GetPost(offset uint64) (post *Post, err error) {
 	post = &page.Posts[offset]
 	Printer.Printf(printssx.Subtle, "Returning %d\n", ((pageID * ibb.ib.postCap) + offset))
 	//ibPageOut = ibPageIn
+	return
+}
+
+func (ib *ImageBooru) GetPost(postID string) (post *Post, err error) {
+	Printer.Printf(printssx.Subtle, "Querying pageID:%s", postID)
+
+	page := &Page{}
+	url := fmt.Sprintf("%s/index.php?page=dapi&s=post&q=index&id=%s", ib.url, postID)
+	err = GetXML(url, page)
+	if err != nil {
+		return nil, err
+	}
+
+	for len(page.Posts) < 1 {
+		return nil, Printer.Errorf("Somehow pageID:%s return nothing?", postID)
+	}
+	post = &page.Posts[0]
 	return
 }
 
