@@ -4,10 +4,15 @@ import (
 	"encoding/xml"
 	"fmt"
 	"image"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/Stachio/go-printssx"
@@ -223,6 +228,11 @@ func (ibb *Browser) GetPost(offset uint64) (post *Post, err error) {
 	return
 }
 
+func (ibb *Browser) GetIBPost(postId string) (post *Post, err error) {
+	post, err = ibb.ib.GetPost(postId)
+	return
+}
+
 func (ib *ImageBooru) GetPost(postID string) (post *Post, err error) {
 	Printer.Printf(printssx.Subtle, "Querying pageID:%s", postID)
 
@@ -251,6 +261,41 @@ func (ibb *Browser) GetTag(tagName string) (tag *Tag, err error) {
 		return nil, err
 	}
 	tag = &tags.Tags[0]
+
+	return
+}
+
+func (post *Post) LoadImage() (err error) {
+	imgURL := post.FileURL
+	if imgURL[:2] == "//" {
+		imgURL = "https:" + imgURL
+	}
+	imgExt := path.Ext(imgURL)[1:]
+	//fmt.Printf("Pulling image index:%d, ID:%d, URL:%s, Ext:%s\n", index, post.ID, imgURL, imgExt)
+	resp, err := http.Get(imgURL)
+	if err != nil {
+		//fmt.Println(err)
+		return
+	}
+
+	var decoder func(io.Reader) (image.Image, error)
+	if imgExt == "png" {
+		decoder = png.Decode
+	} else if imgExt == "jpg" || imgExt == "jpeg" {
+		decoder = jpeg.Decode
+	} else if imgExt == "gif" {
+		decoder = gif.Decode
+	} else {
+		err = fmt.Errorf("Unexpected filetype \"%s\"", imgExt)
+		//fmt.Println(err)
+		return
+	}
+	post.Img, err = decoder(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		//fmt.Println(err)
+		return
+	}
 
 	return
 }
