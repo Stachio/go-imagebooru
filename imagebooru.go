@@ -2,6 +2,7 @@ package imagebooru
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"image"
 	"image/gif"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/Stachio/go-printssx"
 )
@@ -25,6 +27,7 @@ type Post struct {
 	XMLName   xml.Name `xml:"post"`
 	FileURL   string   `xml:"file_url,attr"`
 	SampleURL string   `xml:"sample_url,attr"`
+	Source    string   `xml:"source,attr"`
 	ID        uint64   `xml:"id,attr"`
 	Tags      string   `xml:"tags,attr"`
 
@@ -265,36 +268,61 @@ func (ibb *Browser) GetTag(tagName string) (tag *Tag, err error) {
 	return
 }
 
-func (post *Post) LoadImage() (err error) {
-	imgURL := post.FileURL
+const httpTimeout = 5 //seconds
+var httpTimeoutError = errors.New("Http request timed out")
+
+func (post *Post) loadImage(imageType, imgURL string) (err error) {
+	Printer.Printf(printssx.Subtle, "Downloading image %s:%s\n", imageType, imgURL)
+
 	if imgURL[:2] == "//" {
 		imgURL = "https:" + imgURL
 	}
-	imgExt := path.Ext(imgURL)[1:]
-	//fmt.Printf("Pulling image index:%d, ID:%d, URL:%s, Ext:%s\n", index, post.ID, imgURL, imgExt)
-	resp, err := http.Get(imgURL)
-	if err != nil {
-		//fmt.Println(err)
-		return
-	}
+	imgExt := path.Ext(imgURL)
 
 	var decoder func(io.Reader) (image.Image, error)
-	if imgExt == "png" {
+	if imgExt == ".png" {
 		decoder = png.Decode
-	} else if imgExt == "jpg" || imgExt == "jpeg" {
+	} else if imgExt == ".jpg" || imgExt == ".jpeg" {
 		decoder = jpeg.Decode
-	} else if imgExt == "gif" {
+	} else if imgExt == ".gif" {
 		decoder = gif.Decode
 	} else {
 		err = fmt.Errorf("Unexpected filetype \"%s\"", imgExt)
 		//fmt.Println(err)
 		return
 	}
-	post.Img, err = decoder(resp.Body)
-	resp.Body.Close()
+
+	//fmt.Printf("Pulling image index:%d, ID:%d, URL:%s, Ext:%s\n", index, post.ID, imgURL, imgExt)
+	client := &http.Client{
+		Timeout: httpTimeout * time.Second,
+	}
+	resp, err := client.Get(imgURL)
 	if err != nil {
+		Printer.Println(printssx.Subtle, "Failed to downloaded image")
 		//fmt.Println(err)
 		return
+	}
+
+	Printer.Println(printssx.Subtle, "Decoding image")
+	post.Img, err = decoder(resp.Body)
+
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func (post *Post) LoadImage() (err error) {
+	err = post.loadImage("booru", post.FileURL)
+	if err != nil {
+		Printer.Println(printssx.Subtle, "Booru download failed, attempting source")
+		err2 := post.loadImage("source", post.Source)
+		if err2 != nil {
+			err = fmt.Errorf("%s\n%s", err.Error(), err2.Error())
+		} else {
+			err = nil
+		}
 	}
 
 	return
