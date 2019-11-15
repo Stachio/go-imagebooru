@@ -274,6 +274,11 @@ var httpTimeoutError = errors.New("Http request timed out")
 func (post *Post) loadImage(imageType, imgURL string) (err error) {
 	Printer.Printf(printssx.Subtle, "Downloading image %s:%s\n", imageType, imgURL)
 
+	if len(imgURL) < 2 {
+		err = errors.New("Image URL length is too short")
+		return
+	}
+
 	if imgURL[:2] == "//" {
 		imgURL = "https:" + imgURL
 	}
