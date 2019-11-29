@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Stachio/go-extdata"
+
 	"github.com/Stachio/go-printssx"
 )
 
@@ -58,11 +60,33 @@ type Tags struct {
 	Tags    []Tag    `xml:"tag"`
 }
 
+type Browser struct {
+	imageBooru *ImageBooru
+	tags       []string
+	pages      []*Page
+	post       *Post
+}
+
 type ImageBooru struct {
 	url     string
 	name    string
 	postCap uint64
 	pageCap uint64
+	// DO NOT HAVE A DEFAULT BROWSER
+	// IT IS THEREBY SHARED BY ALL THREADS
+	//browser  *Browser
+	browsers map[string]*Browser
+}
+
+var booruMap = make(map[string]*ImageBooru)
+
+func ImageBooruByName(name string) *ImageBooru {
+	booru, ok := booruMap[name]
+	if !ok {
+		return nil
+	}
+
+	return booru
 }
 
 /*
@@ -98,72 +122,90 @@ func getDBNameFromURL(url string) (name string) {
 }
 
 //New - Returns ImageBooru object
-func New(url string, postCap uint64) (ib *ImageBooru) {
-	ib = &ImageBooru{url: url, name: getDBNameFromURL(url), postCap: postCap}
-	return
+func New(url string) *ImageBooru {
+	imageBooru := &ImageBooru{url: url, name: getDBNameFromURL(url), browsers: make(map[string]*Browser)}
+	//imageBooru.browser = imageBooru.NewBrowser("THEOG")
+	booruMap[imageBooru.name] = imageBooru
+	return imageBooru
 }
 
-type Browser struct {
-	ib    *ImageBooru
-	tags  []string
-	pages []*Page
+func (imageBooru *ImageBooru) NewBrowser(name string) *Browser {
+	if _, ok := imageBooru.browsers[name]; ok {
+		panic(fmt.Errorf("ImageBooru %s already has a browser named %s", imageBooru.name, name))
+	}
+	browser := &Browser{imageBooru: imageBooru}
+	//imageBooru.browsers[name] = browser
+	return browser
 }
 
-func (ibb *Browser) GetIBName() string {
-	return ibb.ib.name
+/*
+func (paginator *Paginator) GetIBName() string {
+	return paginator.ib.name
+}
+*/
+
+func (browser *Browser) ImageBooru() *ImageBooru {
+	return browser.imageBooru
 }
 
-// GetPage - Allows
-func (ibb *Browser) GetPage(pageID uint64) (page *Page, err error) {
-	Printer.Printf(printssx.Subtle, "Querying page:%d with tags \"%s\"", pageID, strings.Join(ibb.tags, ","))
+func (browser *Browser) Tags() []string {
+	return browser.tags
+}
 
-	if uint64(len(ibb.pages)) >= (pageID+1) && ibb.pages[pageID] != nil {
-		page = ibb.pages[pageID]
+func (browser *Browser) SetTags(tags []string) {
+	var kosher bool
+	for _, tag := range tags {
+		kosher = extdata.StringArrayContains(browser.tags, tag)
+		if !kosher {
+			break
+		}
+	}
+	if !kosher {
+		browser.pages = []*Page{}
+	}
+	browser.tags = tags
+}
+
+// GetPage - Pulls an imagebooru page based on the preset tags
+func (browser *Browser) GetPage(pageID uint64) (page *Page, err error) {
+	Printer.Printf(printssx.Subtle, "Querying page:%d with tags \"%s\"", pageID, strings.Join(browser.tags, ","))
+
+	if uint64(len(browser.pages)) >= (pageID+1) && browser.pages[pageID] != nil {
+		page = browser.pages[pageID]
 		return
 	}
 
 	page = &Page{}
-	tagStr := ConvertTags(ibb.tags)
-	url := fmt.Sprintf("%s/index.php?page=dapi&s=post&q=index&pid=%d&tags=%s", ibb.ib.url, pageID, tagStr)
+	tagStr := ConvertTags(browser.tags)
+	url := fmt.Sprintf("%s/index.php?page=dapi&s=post&q=index&pid=%d&tags=%s", browser.imageBooru.url, pageID, tagStr)
 	err = GetXML(url, page)
 	if err != nil {
 		return nil, err
 	}
 
-	for uint64(len(ibb.pages)) < (pageID + 1) {
-		ibb.pages = append(ibb.pages, nil)
+	for uint64(len(browser.pages)) < (pageID + 1) {
+		browser.pages = append(browser.pages, nil)
 	}
-	ibb.pages[pageID] = page
+	browser.pages[pageID] = page
 	return
 }
 
-// GetBrowser - Not now
-func (ib *ImageBooru) GetBrowser(tags []string) (ibb *Browser, err error) {
-	ibb = &Browser{ib: ib, tags: tags}
-	if err != nil {
-		return nil, err
-	}
-
-	return
+func (imageBooru *ImageBooru) SetPostCap(postCap uint64) {
+	imageBooru.postCap = postCap
 }
 
 //NewWithResearch - Returns ImageBooru object with researched postcap
-func NewWithResearch(url string) (ib *ImageBooru, err error) {
-	ib = &ImageBooru{url: url, name: getDBNameFromURL(url)}
-	ibb, err := ib.GetBrowser([]string{""})
-	if err != nil {
-		return nil, err
-	}
-
+func (imageBooru *ImageBooru) ResearchPostCap() error {
 	// Page 1 is used because offset is set to booru cap
-	page, err := ibb.GetPage(1)
+	browser := imageBooru.NewBrowser("THEOG")
+	page, err := browser.GetPage(1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	ib.postCap = page.Offset
-	Printer.Println(printssx.Subtle, "Booru cap count:", ib.postCap)
-	return
+	imageBooru.postCap = page.Offset
+	Printer.Println(printssx.Subtle, "Booru cap count:", imageBooru.postCap)
+	return nil
 }
 
 // GetXML - Return an xml object per url HTTP request
@@ -192,7 +234,7 @@ func GetXML(url string, v interface{}) (err error) {
 }
 
 // GetName - Self explanatory
-func (ib *ImageBooru) GetName() string {
+func (ib *ImageBooru) Name() string {
 	return ib.name
 }
 
@@ -203,45 +245,51 @@ func ConvertTags(tags []string) string {
 	return tagStr
 }
 
-func (ibb *Browser) GetPost(offset uint64) (post *Post, err error) {
+// GetPost - Retrieves an imagebooru post based on the preset tags
+func (browser *Browser) GetPost(offset uint64) (*Post, error) {
+	if browser.imageBooru.postCap == 0 {
+		panic(fmt.Errorf("ImageBooru %s post cap not set", browser.imageBooru.name))
+	}
+
 	// Get the current page ID
-	pageID := offset / ibb.ib.postCap
+	pageID := offset / browser.imageBooru.postCap
 
 	// Get the post id as an offset of the page
-	offset = (offset + 1) % ibb.ib.postCap
+	offset = (offset + 1) % browser.imageBooru.postCap
 	if offset == 0 {
-		offset = ibb.ib.postCap - 1
+		offset = browser.imageBooru.postCap - 1
 	} else {
 		offset = offset - 1
 	}
 
-	page, err := ibb.GetPage(pageID)
+	page, err := browser.GetPage(pageID)
 	if err != nil {
 		return nil, err
 	}
 
 	if offset >= uint64(len(page.Posts)) {
-		err = fmt.Errorf("Offset [%d] > returned posts length [%d]", offset, len(page.Posts))
-		return
+		err := fmt.Errorf("Offset [%d] > returned posts length [%d]", offset, len(page.Posts))
+		return nil, err
 	}
 
-	post = &page.Posts[offset]
-	Printer.Printf(printssx.Subtle, "Returning %d\n", ((pageID * ibb.ib.postCap) + offset))
+	post := &page.Posts[offset]
+	Printer.Printf(printssx.Subtle, "Returning %d\n", ((pageID * browser.imageBooru.postCap) + offset))
 	//ibPageOut = ibPageIn
-	return
+	return post, nil
 }
 
+/*
 func (ibb *Browser) GetIBPost(postId string) (post *Post, err error) {
 	post, err = ibb.ib.GetPost(postId)
 	return
-}
+}*/
 
-func (ib *ImageBooru) GetPost(postID string) (post *Post, err error) {
+func (browser *Browser) GetPostByID(postID string) (*Post, error) {
 	Printer.Printf(printssx.Subtle, "Querying pageID:%s", postID)
 
 	page := &Page{}
-	url := fmt.Sprintf("%s/index.php?page=dapi&s=post&q=index&id=%s", ib.url, postID)
-	err = GetXML(url, page)
+	url := fmt.Sprintf("%s/index.php?page=dapi&s=post&q=index&id=%s", browser.imageBooru.url, postID)
+	err := GetXML(url, page)
 	if err != nil {
 		return nil, err
 	}
@@ -249,13 +297,14 @@ func (ib *ImageBooru) GetPost(postID string) (post *Post, err error) {
 	for len(page.Posts) < 1 {
 		return nil, Printer.Errorf("Somehow pageID:%s return nothing?", postID)
 	}
-	post = &page.Posts[0]
-	return
+	post := &page.Posts[0]
+	browser.post = post
+	return post, nil
 }
 
-func (ibb *Browser) GetTag(tagName string) (tag *Tag, err error) {
+func (browser *Browser) GetTag(tagName string) (tag *Tag, err error) {
 	tags := &Tags{}
-	url := ibb.ib.url + "/index.php?page=dapi&s=tag&q=index&name=" + url.QueryEscape(tagName)
+	url := browser.imageBooru.url + "/index.php?page=dapi&s=tag&q=index&name=" + url.QueryEscape(tagName)
 	err = GetXML(url, tags)
 	if err != nil {
 		if err.Error() == "expected element type <tags> but have <tag>" {
