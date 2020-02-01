@@ -117,7 +117,7 @@ func getDBNameFromURL(url string) (name string) {
 		}
 	}
 
-	name = strings.Replace(name, ".", "", -1)
+	name = strings.Replace(name, ".", "_", -1)
 	return
 }
 
