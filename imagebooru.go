@@ -78,6 +78,10 @@ type ImageBooru struct {
 	browsers map[string]*Browser
 }
 
+func (imageBooru *ImageBooru) PostCap() uint64 {
+	return imageBooru.postCap
+}
+
 var booruMap = make(map[string]*ImageBooru)
 
 func ImageBooruByName(name string) *ImageBooru {
