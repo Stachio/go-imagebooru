@@ -222,6 +222,7 @@ func GetXML(url string, v interface{}) (err error) {
 
 	// Convert http request to bytes
 	bytes, err := ioutil.ReadAll(resp.Body)
+	//Printer.Println(printssx.Loud, string(bytes))
 	if err != nil {
 		return
 	}
@@ -384,4 +385,12 @@ func (post *Post) LoadImage() (err error) {
 	}
 
 	return
+}
+
+func (post *Post) Finalize() error {
+	if post.Img == nil {
+		return post.LoadImage()
+	}
+
+	return nil
 }
